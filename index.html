@@ -165,7 +165,17 @@ async function loadSightings() {
       const tx = db.transaction(STORE, "readonly");
       const store = tx.objectStore(STORE);
       const req = store.getAll();
-      req.onsuccess = () => resolve(req.result.length > 0 ? req.result.sort((a,b) => new Date(b.date) - new Date(a.date)) : null);
+      req.onsuccess = () => {
+        const results = req.result;
+        if (!results || results.length === 0) return resolve(null);
+        // Recreate objectUrls from stored blobs
+        results.forEach(s => {
+          if (s.video && s.video.blob) {
+            s.video.objectUrl = URL.createObjectURL(s.video.blob);
+          }
+        });
+        resolve(results.sort((a,b) => new Date(b.date) - new Date(a.date)));
+      };
       req.onerror = () => resolve(null);
     });
   } catch { return null; }
@@ -178,7 +188,12 @@ async function saveSightings(sightings) {
     store.clear();
     sightings.forEach(s => {
       const clean = { ...s };
-      if (clean.video) { clean.video = { ...clean.video }; delete clean.video.objectUrl; }
+      if (clean.video) {
+        clean.video = { ...clean.video };
+        // Keep the blob for persistence, but remove the ephemeral objectUrl
+        if (clean.video.blob) { clean.video.blob = clean.video.blob; }
+        delete clean.video.objectUrl;
+      }
       store.put(clean);
     });
   } catch (e) { console.warn("Save failed:", e); }
@@ -650,7 +665,7 @@ function saveSighting() {
       state.sightings[idx] = {
         ...state.sightings[idx], animalId: f.animalId,
         weather: f.weather, behavior: f.behavior, notes: f.notes, qty: f.qty,
-        video: f.video ? { name:f.video.name, size:f.video.size, dur:f.video.dur, objectUrl:f.video.objectUrl||null } : null
+        video: f.video ? { name:f.video.name, size:f.video.size, dur:f.video.dur, objectUrl:f.video.objectUrl||null, blob:f.video.blob||null } : null
       };
     }
     state.editId = null;
@@ -661,7 +676,7 @@ function saveSighting() {
     const sg = {
       id: Date.now(), animalId: f.animalId, date: new Date().toISOString(),
       weather: f.weather, behavior: f.behavior, notes: f.notes, qty: f.qty,
-      video: f.video ? { name:f.video.name, size:f.video.size, dur:f.video.dur, objectUrl:f.video.objectUrl||null } : null
+      video: f.video ? { name:f.video.name, size:f.video.size, dur:f.video.dur, objectUrl:f.video.objectUrl||null, blob:f.video.blob||null } : null
     };
     state.sightings.unshift(sg);
     state.overlay = null;
@@ -683,11 +698,11 @@ function handleVideoFile(input) {
     const secs = Math.floor(tempVideo.duration);
     const m = Math.floor(secs / 60);
     const s = secs % 60;
-    state.newForm.video = { name: file.name, size: sizeMB+" MB", dur: m+":"+(s<10?"0":"")+s, objectUrl };
+    state.newForm.video = { name: file.name, size: sizeMB+" MB", dur: m+":"+(s<10?"0":"")+s, objectUrl, blob: file };
     render();
   };
   tempVideo.onerror = () => {
-    state.newForm.video = { name: file.name, size: sizeMB+" MB", dur: "0:00", objectUrl };
+    state.newForm.video = { name: file.name, size: sizeMB+" MB", dur: "0:00", objectUrl, blob: file };
     render();
   };
   tempVideo.src = objectUrl;

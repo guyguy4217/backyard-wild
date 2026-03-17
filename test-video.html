@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Persistence Test</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #1A1F16; color: #E8E4DC; }
+  h1 { color: #8DB654; }
+  .step { background: #242B1E; border-radius: 12px; padding: 16px; margin: 12px 0; border: 1px solid rgba(141,182,84,0.12); }
+  .pass { color: #8DB654; font-weight: bold; }
+  .fail { color: #C45B4A; font-weight: bold; }
+  .pending { color: #D4A053; font-weight: bold; }
+  button { background: #8DB654; color: #1A1F16; border: none; padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; margin: 8px 4px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  input[type="file"] { margin: 8px 0; }
+  #log { background: #0D0F0A; padding: 14px; border-radius: 10px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; margin-top: 16px; }
+  video { max-width: 100%; border-radius: 10px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>Video Persistence Test</h1>
+<p>This tests that uploaded videos survive save/reload from IndexedDB.</p>
+
+<div class="step">
+  <strong>Step 1:</strong> Select a video file<br>
+  <input type="file" id="videoInput" accept="video/*">
+  <div id="step1-status" class="pending">Waiting for file...</div>
+</div>
+
+<div class="step">
+  <strong>Step 2:</strong> Save to IndexedDB and verify blob is stored<br>
+  <button id="saveBtn" onclick="testSave()" disabled>Save to IndexedDB</button>
+  <div id="step2-status" class="pending">Waiting...</div>
+</div>
+
+<div class="step">
+  <strong>Step 3:</strong> Load from IndexedDB and verify video plays<br>
+  <button id="loadBtn" onclick="testLoad()" disabled>Load from IndexedDB</button>
+  <div id="step3-status" class="pending">Waiting...</div>
+  <div id="videoContainer"></div>
+</div>
+
+<div class="step">
+  <strong>Step 4:</strong> Full round-trip test (simulates page reload)<br>
+  <button id="roundtripBtn" onclick="testRoundtrip()" disabled>Run Round-trip Test</button>
+  <div id="step4-status" class="pending">Waiting...</div>
+</div>
+
+<div id="log"></div>
+
+<script>
+const DB_NAME = "VideoTestDB";
+const STORE = "sightings";
+let testFile = null;
+let testObjectUrl = null;
+
+function log(msg) {
+  const el = document.getElementById("log");
+  el.textContent += new Date().toLocaleTimeString() + " " + msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => { e.target.result.createObjectStore(STORE, { keyPath: "id" }); };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// Step 1: File selection
+document.getElementById("videoInput").addEventListener("change", function() {
+  const file = this.files?.[0];
+  if (!file) return;
+  testFile = file;
+  testObjectUrl = URL.createObjectURL(file);
+  const sizeMB = (file.size / (1024*1024)).toFixed(1);
+  log("File selected: " + file.name + " (" + sizeMB + " MB, type: " + file.type + ")");
+  document.getElementById("step1-status").className = "pass";
+  document.getElementById("step1-status").textContent = "File loaded: " + file.name;
+  document.getElementById("saveBtn").disabled = false;
+});
+
+// Step 2: Save to IndexedDB with blob
+async function testSave() {
+  try {
+    const sighting = {
+      id: 1,
+      animalId: 6,
+      date: new Date().toISOString(),
+      video: {
+        name: testFile.name,
+        size: (testFile.size / (1024*1024)).toFixed(1) + " MB",
+        dur: "0:10",
+        blob: testFile  // Store the actual blob!
+        // objectUrl is NOT stored (ephemeral)
+      }
+    };
+    const db = await openDB();
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    store.clear();
+    store.put(sighting);
+    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = reject; });
+
+    log("Saved sighting with video blob to IndexedDB");
+
+    // Verify it was stored
+    const tx2 = db.transaction(STORE, "readonly");
+    const req = tx2.objectStore(STORE).get(1);
+    req.onsuccess = () => {
+      const saved = req.result;
+      if (saved && saved.video && saved.video.blob instanceof Blob) {
+        log("PASS: Blob found in IndexedDB (" + saved.video.blob.size + " bytes)");
+        document.getElementById("step2-status").className = "pass";
+        document.getElementById("step2-status").textContent = "Blob stored successfully (" + saved.video.blob.size + " bytes)";
+        document.getElementById("loadBtn").disabled = false;
+        document.getElementById("roundtripBtn").disabled = false;
+      } else {
+        log("FAIL: No blob found in stored data");
+        document.getElementById("step2-status").className = "fail";
+        document.getElementById("step2-status").textContent = "FAIL: Blob not stored";
+      }
+    };
+  } catch (e) {
+    log("FAIL: Save error - " + e.message);
+    document.getElementById("step2-status").className = "fail";
+    document.getElementById("step2-status").textContent = "FAIL: " + e.message;
+  }
+}
+
+// Step 3: Load from IndexedDB and play
+async function testLoad() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = () => {
+      const results = req.result;
+      if (!results || results.length === 0) {
+        log("FAIL: No data in IndexedDB");
+        document.getElementById("step3-status").className = "fail";
+        document.getElementById("step3-status").textContent = "FAIL: No data found";
+        return;
+      }
+      const s = results[0];
+      if (s.video && s.video.blob) {
+        // Recreate objectUrl from blob (this is what the app does on load)
+        const newUrl = URL.createObjectURL(s.video.blob);
+        log("Recreated objectUrl from blob: " + newUrl.substring(0, 50) + "...");
+
+        const container = document.getElementById("videoContainer");
+        container.innerHTML = '<video id="testVideo" controls playsinline preload="metadata" style="max-width:100%;"></video>';
+        const video = document.getElementById("testVideo");
+        video.src = newUrl;
+        video.onloadeddata = () => {
+          log("PASS: Video loaded and ready to play!");
+          document.getElementById("step3-status").className = "pass";
+          document.getElementById("step3-status").textContent = "Video plays from IndexedDB blob!";
+        };
+        video.onerror = () => {
+          log("FAIL: Video element error - could not play blob");
+          document.getElementById("step3-status").className = "fail";
+          document.getElementById("step3-status").textContent = "FAIL: Video error";
+        };
+      } else {
+        log("FAIL: Loaded sighting has no video blob");
+        document.getElementById("step3-status").className = "fail";
+        document.getElementById("step3-status").textContent = "FAIL: No blob in loaded data";
+      }
+    };
+  } catch (e) {
+    log("FAIL: Load error - " + e.message);
+    document.getElementById("step3-status").className = "fail";
+    document.getElementById("step3-status").textContent = "FAIL: " + e.message;
+  }
+}
+
+// Step 4: Full round-trip (save, clear memory, reload from DB)
+async function testRoundtrip() {
+  log("--- Round-trip Test ---");
+  log("1. Clearing in-memory references...");
+
+  // Revoke all existing objectUrls to simulate a page reload
+  if (testObjectUrl) { URL.revokeObjectURL(testObjectUrl); testObjectUrl = null; }
+
+  log("2. Loading fresh from IndexedDB...");
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = () => {
+      const results = req.result;
+      const s = results[0];
+      if (s && s.video && s.video.blob instanceof Blob) {
+        const freshUrl = URL.createObjectURL(s.video.blob);
+        log("3. Recreated fresh objectUrl from stored blob");
+
+        // Test that the video is playable
+        const testVid = document.createElement("video");
+        testVid.preload = "metadata";
+        testVid.onloadeddata = () => {
+          log("PASS: Round-trip complete! Video survives save/reload cycle.");
+          document.getElementById("step4-status").className = "pass";
+          document.getElementById("step4-status").textContent = "PASS: Video persists across simulated reload!";
+          URL.revokeObjectURL(freshUrl);
+        };
+        testVid.onerror = () => {
+          log("FAIL: Round-trip failed - video not playable after reload");
+          document.getElementById("step4-status").className = "fail";
+          document.getElementById("step4-status").textContent = "FAIL: Video not playable after reload";
+        };
+        testVid.src = freshUrl;
+      } else {
+        log("FAIL: No blob found after round-trip");
+        document.getElementById("step4-status").className = "fail";
+        document.getElementById("step4-status").textContent = "FAIL: Blob lost during round-trip";
+      }
+    };
+  } catch (e) {
+    log("FAIL: Round-trip error - " + e.message);
+    document.getElementById("step4-status").className = "fail";
+    document.getElementById("step4-status").textContent = "FAIL: " + e.message;
+  }
+}
+
+log("Test page loaded. Select a video file to begin.");
+</script>
+</body>
+</html>
