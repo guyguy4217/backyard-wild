@@ -178,7 +178,7 @@ async function saveSightings(sightings) {
     store.clear();
     sightings.forEach(s => {
       const clean = { ...s };
-      if (clean.video && clean.video.objectUrl) { delete clean.video.objectUrl; }
+      if (clean.video) { clean.video = { ...clean.video }; delete clean.video.objectUrl; }
       store.put(clean);
     });
   } catch (e) { console.warn("Save failed:", e); }
