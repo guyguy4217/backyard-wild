@@ -1,4 +1,4 @@
-const CACHE_NAME = "backyardwild-v2";
+const CACHE_NAME = "backyardwild-v3";
 const ASSETS = [
   "./",
   "./index.html",
