@@ -1,4 +1,4 @@
-const CACHE_NAME = "backyardwild-v3";
+const CACHE_NAME = "backyardwild-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -23,14 +23,12 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      return cached || fetch(e.request).then((response) => {
-        if (response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-        }
-        return response;
-      });
-    }).catch(() => caches.match("./index.html"))
+    fetch(e.request).then((response) => {
+      if (response.status === 200) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(e.request).then((cached) => cached || caches.match("./index.html")))
   );
 });
