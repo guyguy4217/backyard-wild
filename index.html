@@ -125,7 +125,7 @@
 
 <script>
 // ==================== DATA ====================
-const ANIMALS = [
+const DEFAULT_ANIMALS = [
   { id:1, name:"Eastern Bluebird", cat:"Bird", emoji:"🐦", color:"#4A90D9" },
   { id:2, name:"White-tailed Deer", cat:"Mammal", emoji:"🦌", color:"#8B6914" },
   { id:3, name:"Red Fox", cat:"Mammal", emoji:"🦊", color:"#D4652F" },
@@ -141,8 +141,27 @@ const ANIMALS = [
   { id:13, name:"Monarch Butterfly", cat:"Insect", emoji:"🦋", color:"#E8860C" },
   { id:14, name:"Opossum", cat:"Mammal", emoji:"🐾", color:"#8C8C8C" },
   { id:15, name:"Chipmunk", cat:"Mammal", emoji:"🐿️", color:"#B5651D" },
+  { id:16, name:"American Robin", cat:"Bird", emoji:"🐦", color:"#D2691E" },
+  { id:17, name:"Wild Turkey", cat:"Bird", emoji:"🦃", color:"#5C3317" },
+  { id:18, name:"Barn Owl", cat:"Bird", emoji:"🦉", color:"#C4A35A" },
+  { id:19, name:"Woodpecker", cat:"Bird", emoji:"🪶", color:"#B22222" },
+  { id:20, name:"Canada Goose", cat:"Bird", emoji:"🪿", color:"#3B3C36" },
+  { id:21, name:"Coyote", cat:"Mammal", emoji:"🐺", color:"#8B7355" },
+  { id:22, name:"Skunk", cat:"Mammal", emoji:"🦨", color:"#2F2F2F" },
+  { id:23, name:"Bat", cat:"Mammal", emoji:"🦇", color:"#4A3728" },
+  { id:24, name:"Groundhog", cat:"Mammal", emoji:"🦫", color:"#6B4226" },
+  { id:25, name:"Bullfrog", cat:"Amphibian", emoji:"🐸", color:"#2E8B57" },
+  { id:26, name:"Salamander", cat:"Amphibian", emoji:"🦎", color:"#FF6347" },
+  { id:27, name:"Snapping Turtle", cat:"Reptile", emoji:"🐢", color:"#556B2F" },
+  { id:28, name:"Firefly", cat:"Insect", emoji:"✨", color:"#FFD700" },
+  { id:29, name:"Dragonfly", cat:"Insect", emoji:"🪰", color:"#4682B4" },
+  { id:30, name:"Praying Mantis", cat:"Insect", emoji:"🦗", color:"#6B8E23" },
 ];
+let ANIMALS = [...DEFAULT_ANIMALS];
 const CATEGORIES = ["All","Bird","Mammal","Reptile","Amphibian","Insect"];
+const CUSTOM_ANIMAL_STORE = "customAnimals";
+const ANIMAL_EMOJIS = ["🐦","🦅","🦉","🦆","🪿","🦃","🪶","🐧","🦜","🦢","🦌","🦊","🐺","🐇","🐿️","🦝","🦨","🦇","🦫","🐾","🐢","🐍","🦎","🐊","🐸","🦋","🐝","🐞","🦗","🪰","✨","🕷️","🐛","🦂","🐠","🐟","🦈","🐋","🐬","🦭"];
+const ANIMAL_COLORS = ["#4A90D9","#C41E3A","#D4652F","#5A8C3C","#8B6914","#7A6B5D","#A0826D","#6B3A2A","#5C7A29","#4A4A4A","#5B7FA5","#3D6B35","#E8860C","#8C8C8C","#B5651D","#D2691E","#B22222","#FFD700","#4682B4","#2E8B57"];
 const WEATHER = ["☀️ Sunny","⛅ Partly Cloudy","☁️ Overcast","🌧️ Rainy","❄️ Snowy","🌫️ Foggy"];
 const BEHAVIORS = ["Feeding","Resting","Moving","Nesting","Playing","Hunting","Drinking","Calling"];
 
@@ -157,11 +176,36 @@ const DB_NAME = "BackyardWildDB";
 const STORE = "sightings";
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = e => { e.target.result.createObjectStore(STORE, { keyPath: "id" }); };
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(CUSTOM_ANIMAL_STORE)) db.createObjectStore(CUSTOM_ANIMAL_STORE, { keyPath: "id" });
+    };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = e => reject(e.target.error);
   });
+}
+async function loadCustomAnimals() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(CUSTOM_ANIMAL_STORE, "readonly");
+      const store = tx.objectStore(CUSTOM_ANIMAL_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch { return []; }
+}
+async function saveCustomAnimals(customs) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(CUSTOM_ANIMAL_STORE, "readwrite");
+    const store = tx.objectStore(CUSTOM_ANIMAL_STORE);
+    store.clear();
+    customs.forEach(a => store.put(a));
+  } catch (e) { console.warn("Save custom animals failed:", e); }
 }
 async function loadSightings() {
   try {
@@ -217,9 +261,13 @@ let state = {
   editId: null,
   selectMode: false,
   selected: new Set(),
+  showCustomAnimalForm: false,
+  customAnimalForm: { name:"", cat:"Bird", emoji:"🐦", color:"#4A90D9" },
+  customAnimals: [],
 };
 
 function getAnimal(id) { return ANIMALS.find(a => a.id === id); }
+function getAllAnimals() { return ANIMALS; }
 
 function fmtDate(d) {
   const now = new Date(), dt = new Date(d), diff = Math.floor((now-dt)/864e5);
@@ -359,7 +407,7 @@ function renderFeed() {
 // ==================== STATS TAB ====================
 function renderStats() {
   const s = state.sightings;
-  const specStats = ANIMALS.map(a => ({
+  const specStats = getAllAnimals().map(a => ({
     ...a, count: s.filter(x=>x.animalId===a.id).length,
     lastSeen: s.filter(x=>x.animalId===a.id).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]?.date
   })).filter(a=>a.count>0).sort((a,b)=>b.count-a.count);
@@ -458,8 +506,60 @@ function renderNewSighting() {
         <span style="font-size:22px;">${a.emoji}</span>
         <span style="font-size:10px; color:var(--text); font-weight:500; text-align:center; line-height:1.2;">${a.name}</span>
       </button>`).join("")}
+      <button onclick="state.showCustomAnimalForm=true; render();"
+        style="padding:12px 8px; border-radius:14px; cursor:pointer; display:flex; flex-direction:column;
+          align-items:center; gap:4px; border:2px dashed var(--border); background:transparent;">
+        <span style="font-size:22px; opacity:0.5;">+</span>
+        <span style="font-size:10px; color:var(--text-dim); font-weight:500; text-align:center; line-height:1.2;">Add Custom</span>
+      </button>
     </div>
   </div>`;
+
+  // Custom animal inline form
+  if (state.showCustomAnimalForm) {
+    const cf = state.customAnimalForm;
+    h += `<div class="card" style="padding:16px; margin-bottom:20px; border-color:var(--accent);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <span style="font-size:13px; font-weight:700; color:var(--accent);">New Custom Animal</span>
+        <button onclick="state.showCustomAnimalForm=false; render();"
+          style="background:none; border:none; color:var(--text-dim); font-size:18px; cursor:pointer;">×</button>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Name</div>
+        <input type="text" placeholder="e.g. Blue Jay" value="${cf.name}"
+          oninput="state.customAnimalForm.name=this.value;"
+          style="width:100%; padding:10px 14px; border-radius:10px; border:1px solid var(--border);
+            background:var(--bg); color:var(--text); font-size:14px; outline:none;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Category</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${CATEGORIES.slice(1).map(c => `<button class="pill ${cf.cat===c?"pill-active":"pill-inactive"}"
+            onclick="state.customAnimalForm.cat='${c}'; render();">${c}</button>`).join("")}
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Emoji</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${ANIMAL_EMOJIS.map(e => `<button onclick="state.customAnimalForm.emoji='${e}'; render();"
+            style="width:36px; height:36px; border-radius:10px; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+              border:${cf.emoji===e?'2px solid var(--accent)':'1px solid var(--border)'};
+              background:${cf.emoji===e?'var(--accent-dim)':'var(--card)'};">${e}</button>`).join("")}
+        </div>
+      </div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">Color</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${ANIMAL_COLORS.map(c => `<button onclick="state.customAnimalForm.color='${c}'; render();"
+            style="width:32px; height:32px; border-radius:10px; cursor:pointer;
+              background:${c}; border:${cf.color===c?'3px solid var(--text)':'2px solid transparent'};"></button>`).join("")}
+        </div>
+      </div>
+      <button onclick="saveCustomAnimal()"
+        style="width:100%; padding:12px; border-radius:12px; border:none; font-size:14px; font-weight:600; cursor:pointer;
+          background:var(--accent); color:var(--bg);">Add Animal</button>
+    </div>`;
+  }
 
   // Quantity
   h += `<div style="margin-bottom:20px;">
@@ -759,6 +859,22 @@ function showToast(msg) {
   setTimeout(() => { state.toast = null; render(); }, 2500);
 }
 
+// ==================== CUSTOM ANIMALS ====================
+function saveCustomAnimal() {
+  const cf = state.customAnimalForm;
+  if (!cf.name.trim()) return;
+  const newId = Date.now();
+  const animal = { id: newId, name: cf.name.trim(), cat: cf.cat, emoji: cf.emoji, color: cf.color, custom: true };
+  ANIMALS.push(animal);
+  state.customAnimals.push(animal);
+  saveCustomAnimals(state.customAnimals);
+  state.newForm.animalId = newId;
+  state.showCustomAnimalForm = false;
+  state.customAnimalForm = { name:"", cat:"Bird", emoji:"🐦", color:"#4A90D9" };
+  showToast(`${animal.name} added!`);
+  render();
+}
+
 // ==================== BATCH SELECT ====================
 function toggleSelectMode() {
   state.selectMode = !state.selectMode;
@@ -792,6 +908,11 @@ function deleteSelected() {
 
 // ==================== INIT ====================
 (async function init() {
+  const customs = await loadCustomAnimals();
+  if (customs.length > 0) {
+    state.customAnimals = customs;
+    customs.forEach(a => { if (!ANIMALS.find(x => x.id === a.id)) ANIMALS.push(a); });
+  }
   const saved = await loadSightings();
   if (saved && saved.length > 0) { state.sightings = saved; }
   render();
