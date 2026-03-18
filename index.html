@@ -93,6 +93,18 @@
     display: flex; flex-direction: column; align-items: center; gap: 8px; transition: border-color 0.2s; }
   .upload-zone:active { border-color: var(--accent); color: var(--accent); }
 
+  .select-check { width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--border);
+    background: transparent; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; cursor: pointer; }
+  .select-check.checked { background: var(--accent); border-color: var(--accent); }
+  .select-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 15;
+    padding: 14px 20px calc(14px + var(--safe-bottom)); background: var(--card);
+    border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center;
+    animation: slideUp 0.25s ease; }
+  .select-bar-btn { flex: 1; padding: 14px; border-radius: 14px; border: none; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: transform 0.15s; }
+  .select-bar-btn:active { transform: scale(0.96); }
+
   .toast { position: fixed; top: calc(var(--safe-top) + 10px); left: 50%; transform: translateX(-50%);
     background: var(--accent); color: var(--bg); padding: 10px 20px; border-radius: 12px;
     font-size: 13px; font-weight: 600; z-index: 50; animation: slideDown 0.3s ease, fadeSlideUp 0.3s 2s reverse forwards;
@@ -199,6 +211,8 @@ let state = {
   videoPlaying: false,
   toast: null,
   editId: null,
+  selectMode: false,
+  selected: new Set(),
 };
 
 function getAnimal(id) { return ANIMALS.find(a => a.id === id); }
@@ -244,6 +258,14 @@ function render() {
   // Overlays
   if (state.overlay === "new") html += renderNewSighting();
   else if (state.overlay && typeof state.overlay === "object") html += renderDetail(state.overlay);
+
+  // Select mode action bar
+  if (state.selectMode && state.selected.size > 0) {
+    html += `<div class="select-bar">
+      <button class="select-bar-btn" onclick="selectAll()" style="background:var(--accent-dim); color:var(--accent);">Select All</button>
+      <button class="select-bar-btn" onclick="deleteSelected()" style="background:var(--danger); color:#fff;">Delete (${state.selected.size})</button>
+    </div>`;
+  }
 
   // Toast
   if (state.toast) html += `<div class="toast">${state.toast}</div>`;
@@ -293,13 +315,21 @@ function renderFeed() {
   // Recent sightings
   h += `<div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
     <span style="font-size:15px; font-weight:700;">Recent Sightings</span>
-    <span style="font-size:12px; color:var(--text-dim);">${s.length} total</span>
+    <div style="display:flex; align-items:center; gap:10px;">
+      ${state.selectMode ? `<span style="font-size:12px; color:var(--accent); font-weight:600;">${state.selected.size} selected</span>` : `<span style="font-size:12px; color:var(--text-dim);">${s.length} total</span>`}
+      ${s.length > 0 ? `<button onclick="toggleSelectMode()" style="background:${state.selectMode ? 'var(--card-hover)' : 'var(--card)'}; border:1px solid var(--border); color:var(--text); padding:5px 12px; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer;">${state.selectMode ? 'Cancel' : 'Select'}</button>` : ''}
+    </div>
   </div>`;
 
   s.slice(0, 20).forEach((sg, i) => {
     const a = getAnimal(sg.animalId);
     if (!a) return;
-    h += `<div class="card sighting-row" onclick="openDetail(${sg.id})" style="margin-bottom:8px; animation:fadeSlideUp 0.4s ${320+i*50}ms both;">
+    const isSel = state.selected.has(sg.id);
+    const clickAction = state.selectMode ? `toggleSelect(${sg.id})` : `openDetail(${sg.id})`;
+    h += `<div class="card sighting-row" onclick="${clickAction}" style="margin-bottom:8px; animation:fadeSlideUp 0.4s ${320+i*50}ms both; ${isSel ? 'border-color:var(--accent); background:rgba(141,182,84,0.08);' : ''}">
+      ${state.selectMode ? `<div class="select-check ${isSel?'checked':''}">
+        ${isSel ? '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 7l3 3 5-6" stroke="#1A1F16" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}
+      </div>` : ''}
       <div class="animal-icon" style="background:${a.color}22;">
         ${a.emoji}
         ${sg.video ? `<div class="video-badge"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1.5v7l6.5-3.5L2 1.5z" fill="#1A1F16"/></svg></div>` : ""}
@@ -631,7 +661,7 @@ function renderDetail(s) {
 }
 
 // ==================== ACTIONS ====================
-function switchTab(t) { state.tab = t; render(); }
+function switchTab(t) { state.tab = t; state.selectMode = false; state.selected = new Set(); render(); }
 
 function openNew() {
   state.overlay = "new"; state.search = ""; state.filterCat = "All"; state.editId = null;
@@ -723,6 +753,37 @@ function editSighting(id) {
 function showToast(msg) {
   state.toast = msg; render();
   setTimeout(() => { state.toast = null; render(); }, 2500);
+}
+
+// ==================== BATCH SELECT ====================
+function toggleSelectMode() {
+  state.selectMode = !state.selectMode;
+  state.selected = new Set();
+  render();
+}
+function toggleSelect(id) {
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  render();
+}
+function selectAll() {
+  const visible = state.sightings.slice(0, 20);
+  if (state.selected.size === visible.length) {
+    state.selected = new Set();
+  } else {
+    state.selected = new Set(visible.map(s => s.id));
+  }
+  render();
+}
+function deleteSelected() {
+  const count = state.selected.size;
+  if (!confirm(`Delete ${count} sighting${count > 1 ? 's' : ''}?`)) return;
+  state.sightings = state.sightings.filter(s => !state.selected.has(s.id));
+  state.selected = new Set();
+  state.selectMode = false;
+  showToast(`${count} sighting${count > 1 ? 's' : ''} deleted`);
+  saveSightings(state.sightings);
+  render();
 }
 
 // ==================== INIT ====================
