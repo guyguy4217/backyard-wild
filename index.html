@@ -146,7 +146,11 @@ const CATEGORIES = ["All","Bird","Mammal","Reptile","Amphibian","Insect"];
 const WEATHER = ["☀️ Sunny","⛅ Partly Cloudy","☁️ Overcast","🌧️ Rainy","❄️ Snowy","🌫️ Foggy"];
 const BEHAVIORS = ["Feeding","Resting","Moving","Nesting","Playing","Hunting","Drinking","Calling"];
 
-const SEED = [];
+const SEED = [
+  { id:1, animalId:6, date:"2026-03-18T07:30:00", weather:"☀️ Sunny", behavior:"Feeding", notes:"Pair at the bird feeder this morning", qty:2, video:null },
+  { id:2, animalId:5, date:"2026-03-17T15:45:00", weather:"⛅ Partly Cloudy", behavior:"Playing", notes:"Chasing each other up the oak tree", qty:3, video:null },
+  { id:3, animalId:7, date:"2026-03-16T18:20:00", weather:"☁️ Overcast", behavior:"Feeding", notes:"Nibbling clover near the garden bed", qty:1, video:null },
+];
 
 // ==================== PERSISTENCE (IndexedDB) ====================
 const DB_NAME = "BackyardWildDB";
@@ -202,7 +206,7 @@ async function saveSightings(sightings) {
 
 // ==================== STATE ====================
 let state = {
-  sightings: [],
+  sightings: SEED,
   tab: "feed",
   overlay: null, // null | "new" | sighting object
   search: "",
