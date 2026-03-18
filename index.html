@@ -255,7 +255,7 @@ let state = {
   overlay: null, // null | "new" | sighting object
   search: "",
   filterCat: "All",
-  newForm: { animalId:null, weather:WEATHER[0], behavior:BEHAVIORS[0], notes:"", qty:1, video:null },
+  newForm: { animalId:null, weather:WEATHER[0], behavior:BEHAVIORS[0], notes:"", qty:1, video:null, dateOverride:null },
   videoPlaying: false,
   toast: null,
   editId: null,
@@ -602,6 +602,25 @@ function renderNewSighting() {
         min-height:90px;">${f.notes}</textarea>
   </div>`;
 
+  // Date & Time
+  const sightingDate = f.dateOverride ? new Date(f.dateOverride) : new Date();
+  const dateLabel = f.dateOverride ? fmtLongDate(f.dateOverride) + " at " + fmtTime(f.dateOverride) : "Now (current time)";
+  h += `<div style="margin-bottom:20px;">
+    <div class="section-label">Date & Time</div>
+    <div class="card" style="display:flex; align-items:center; gap:12px; padding:14px 16px;">
+      <div style="width:40px; height:40px; border-radius:10px; flex-shrink:0;
+        background:var(--accent-dim); display:flex; align-items:center; justify-content:center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--accent)" stroke-width="1.8"/><path d="M12 7v5l3 3" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:13px; font-weight:500;">${dateLabel}</div>
+        ${f.dateOverride ? `<div style="font-size:11px; color:var(--text-dim); margin-top:2px;">From video file</div>` : `<div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Attach a video to use its timestamp</div>`}
+      </div>
+      ${f.dateOverride ? `<button onclick="state.newForm.dateOverride=null; render();"
+        style="padding:6px 12px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:11px; cursor:pointer;">Use Now</button>` : ""}
+    </div>
+  </div>`;
+
   // Video
   h += `<div>
     <div class="section-label">Video</div>
@@ -628,7 +647,7 @@ function renderNewSighting() {
         <div style="font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${f.video.name}</div>
         <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">${f.video.size} · ${f.video.dur}</div>
       </div>
-      <button onclick="state.newForm.video=null; render();"
+      <button onclick="state.newForm.video=null; state.newForm.dateOverride=null; render();"
         style="width:30px; height:30px; border-radius:8px; border:none; flex-shrink:0;
           background:rgba(196,91,74,0.15); color:var(--danger); font-size:16px; cursor:pointer;
           display:flex; align-items:center; justify-content:center;">×</button>
@@ -769,7 +788,7 @@ function switchTab(t) { state.tab = t; state.selectMode = false; state.selected 
 
 function openNew() {
   state.overlay = "new"; state.search = ""; state.filterCat = "All"; state.editId = null;
-  state.newForm = { animalId:null, weather:WEATHER[0], behavior:BEHAVIORS[0], notes:"", qty:1, video:null };
+  state.newForm = { animalId:null, weather:WEATHER[0], behavior:BEHAVIORS[0], notes:"", qty:1, video:null, dateOverride:null };
   render();
 }
 function closeOverlay() { state.overlay = null; state.videoPlaying = false; state.editId = null; render(); }
@@ -797,7 +816,7 @@ function saveSighting() {
     showToast("Sighting updated!");
   } else {
     const sg = {
-      id: Date.now(), animalId: f.animalId, date: new Date().toISOString(),
+      id: Date.now(), animalId: f.animalId, date: f.dateOverride || new Date().toISOString(),
       weather: f.weather, behavior: f.behavior, notes: f.notes, qty: f.qty,
       video: f.video ? { name:f.video.name, size:f.video.size, dur:f.video.dur, objectUrl:f.video.objectUrl||null, blob:f.video.blob||null } : null
     };
@@ -815,6 +834,10 @@ function handleVideoFile(input) {
   if (!file) return;
   const sizeMB = (file.size / (1024*1024)).toFixed(1);
   const objectUrl = URL.createObjectURL(file);
+  // Use the file's lastModified timestamp as the sighting date
+  if (file.lastModified) {
+    state.newForm.dateOverride = new Date(file.lastModified).toISOString();
+  }
   const tempVideo = document.createElement("video");
   tempVideo.preload = "metadata";
   tempVideo.onloadedmetadata = () => {
