@@ -9,6 +9,9 @@
 <meta name="theme-color" content="#1A1F16">
 <title>BackyardWild</title>
 
+<!-- DOM diffing for smooth updates -->
+<script src="https://unpkg.com/morphdom@2.7.4/dist/morphdom-umd.min.js"></script>
+
 <!-- PWA Manifest -->
 <link rel="manifest" href="./manifest.json">
 <script>
@@ -322,7 +325,16 @@ function render() {
   // Toast
   if (state.toast) html += `<div class="toast">${state.toast}</div>`;
 
-  app.innerHTML = html;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  morphdom(app, tmp, { childrenOnly: true,
+    onBeforeElUpdated(from, to) {
+      // Preserve focused inputs / playing videos
+      if (from.isEqualNode(to)) return false;
+      if (from.tagName === "VIDEO" && from.src === to.src) return false;
+      return true;
+    }
+  });
 }
 
 // ==================== FEED TAB ====================

@@ -1,8 +1,9 @@
-const CACHE_NAME = "backyardwild-v4";
+const CACHE_NAME = "backyardwild-v5";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
+  "https://unpkg.com/morphdom@2.7.4/dist/morphdom-umd.min.js",
 ];
 
 self.addEventListener("install", (e) => {
